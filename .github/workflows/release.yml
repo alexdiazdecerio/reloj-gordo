@@ -1,0 +1,46 @@
+name: Release
+
+# Se lanza al subir una etiqueta tipo v1.2 y publica el APK como release (para Obtainium)
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Clave de firma
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+
+      - name: Compilar
+        env:
+          KS_FILE: ${{ runner.temp }}/release.keystore
+          KS_PASS: ${{ secrets.KS_PASS }}
+        run: ./build.sh
+
+      - name: Publicar release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mv RelojGordo.apk "RelojGordo-${GITHUB_REF_NAME}.apk"
+          gh release create "$GITHUB_REF_NAME" "RelojGordo-${GITHUB_REF_NAME}.apk" \
+            --title "$GITHUB_REF_NAME" --generate-notes
